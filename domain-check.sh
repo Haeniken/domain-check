@@ -1,14 +1,21 @@
 #!/bin/bash
-
+#==============================================================================
 # Your Access-SSID here:
 SSID=.secret.
 
-############## body ##############
+BCURL=/usr/bin/curl
+BJQ=/usr/bin/jq
+BGREP=/usr/bin/grep
+BDIG=/usr/bin/dig
+
+#==============================================================================
+# METHODS
+#==============================================================================
 
 VERSION="Haeniken WebNotif checker build 17.05.2022"
 verbose=false
 
-# функция проверки значения переменной
+# Функция проверки значения переменной
 function empty {
         local var="$1"
         # Возвращает true, если:
@@ -39,11 +46,13 @@ function empty {
                 [[ $( echo "" ) ]]
 }
 
+# Версия
 function show_version {
         echo -e "$VERSION\n"
         }
 show_version
 
+# История изменений
 function show_changelog {
         echo -e "История изменений:\n"
         echo -e "14.05.2022\nДобавлен парсинг id конфигураций домена (id).\nНаписаны модули помощи, версии, истории изменений.\nРеализованы проверки на наличие аргумента.\n"
@@ -54,6 +63,7 @@ function show_changelog {
         echo -e "\e[1;33m\n* Парсить и игнорировать WaF backend.\n* Добавить readmode для Access-SSID.\n* Реализовать проверку поддержки SNI для SSL и проверку наличия шаблона в rules.\n* Проверка А-записей на совпадение с listen, проверка А-записей от whois опционально.\n* Добавить простукивание порта backend.\e[\0m"
         }
 
+# Помощь
 function show_help {
 echo -e "\e[1;33mЧто умеет:\e[0m"
 echo -e "* Проверяет активность услуги (статус)."
@@ -99,20 +109,35 @@ echo -e "* Не умеет изменять ACCESS-SSID (пока воткнут
         exit
         }
 
+### All unexpected errors ###
 function unexpected_error {
         echo -e "\e[1;31mError!\e[0m Unexpected error"
         }
+
+### Die on demand with message ###
+die(){
+echo "$@"
+exit 999
+}
+
+# Проверяем пути к программам, иначе завершение
+verify_bins(){
+[ ! -x $BCURL ] && die "File $BCURL does not exists. Make sure correct path is set in $0."
+[ ! -x $BJQ ] && die "File $BJQ does not exists. Make sure correct path is set in $0."
+[ ! -x $BGREP ] && die "File $BGREP does not exists. Make sure correct path is set in $0."
+[ ! -x $BDIG ] && die "File $BDIG does not exists. Make sure correct path is set in $0."
+}
 
 function show_version {
         echo -e "$VERSION\n"
         }
 
+# TODO
 function edit_ssid {
         read -sp "Please enter your Access-SSID: " ssid && echo
         echo -e "Access-SSID is replaced. Please, start script again."
         exit
         }
-
 
 # цикл проверки аргумента
 while [ "$1" != "" ];
@@ -151,8 +176,8 @@ do
         shift
 done
 
-#sed -i 's/-H \'Access-SSID: .secret.' \\/-H \'Access-SSID: $ssid/' check.sh
-#sed -i.bak "s/SSID:/!d" check.sh
+#sed -i 's/-H \'Access-SSID: .secret.' \\/-H \'Access-SSID: $ssid/' domain-check.sh
+#sed -i.bak "s/SSID:/!d" domain-check.sh
 
 #проверка наличия аргумента (домена)
 if [ -n "$DOMAIN" ]
@@ -164,15 +189,18 @@ else
         exit
 fi
 
+#==============================================================================
+# RUN SCRIPT
+#==============================================================================
 
 # извлечение основной конфигурации домена из кц по доменному имени
-RESULT=$(curl -s 'http://.secretdomain./api/v1/domains.get' \
+RESULT=$($BCURL -s 'http://.secret.' \
 -H 'Accept: application/json, text/plain, */*' \
 -H 'Accept-Language: en,en-US;q=0.9' \
--H ".secret.: $SSID" \
+-H "Access-SSID: $SSID" \
 -H 'Connection: keep-alive' \
 -H 'Content-Type: application/json;charset=UTF-8' \
--H 'Origin: http://.secretdomain.' \
+-H '.secret.' \
 -H '.secret.' \
 --data '{"offset":0,"limit":20,"search":"\"'$DOMAIN'","searchField":"name"}' \
 --compressed \
@@ -186,7 +214,7 @@ then
 elif empty "${RESULT}"
 then
         # проверка на резолв cc (отсутствие VPN или какие-либо иные проблемы. Можно добавить отладку dig +trace в случае unexpected_error
-        DIGCC=$(dig a .secret.domain. +short;)
+        DIGCC=$($BDIG a .secret. +short;)
                 if empty "${DIGCC}"
                 then
                         echo -e "\e[1;31mError!\e[0m You are not in StormWall network!\nCheck your VPN or that the script is running on l7filter."
@@ -207,12 +235,12 @@ fi
 $verbose && echo -e "\n\e[1;31mVerbose mode active!\n\e[0m" || :
 
 # парсим тело запроса  в json формат
-JSONRESULT=$(jq -r '.[]' <<< $RESULT;)
+JSONRESULT=$($BJQ -r '.[]' <<< $RESULT;)
 $verbose && echo -e "var \$RESULT\n$RESULT" || :
 $verbose && echo -e "\nvar \$JSONRESULT\n$JSONRESULT" || :
 
 # проверка на строгое соответствие домена
-NAME=$(jq -r '.result.items | .. | .name? | select (.)' <<< $RESULT | tr -d '\"[]' | head -n 1;)
+NAME=$($BJQ -r '.result.items | .. | .name? | select (.)' <<< $RESULT | tr -d '\"[]' | head -n 1;)
 if [ "$NAME" != "$DOMAIN" ]
 then
         echo -e "\e[1;33m\nWarning! The domain name argument does not match with the configuration!\e[0m"
@@ -230,62 +258,62 @@ fi
 
 
 # получение id конфигураций доменов, внимание, здесь в переменную вносится массив
-IDRESULT=($(jq -r '.result.items | .. | .id? | select (.)' <<< $RESULT | tr -d '\"#';))
+IDRESULT=($($BJQ -r '.result.items | .. | .id? | select (.)' <<< $RESULT | tr -d '\"#';))
 $verbose && echo -e "\nvar \$IDRESULT\n${IDRESULT[*]}" || :
 
 
 # примем за данность то, что 80 и 443 scheme всегда идут первой и второй строкой в массиве соответственно - немного слабое место
 # получаем 80 scheme из массива
-RESULT2=$(curl -s -XPOST 'http://.secret.domain./api/v1/domains.getById' \
+RESULT2=$($BCURL -s -XPOST '.secret.' \
 -H 'Accept: application/json, text/plain, */*' \
 -H 'Accept-Language: en,en-US;q=0.9' \
 -H "Access-SSID: $SSID" \
 -H 'Connection: keep-alive' \
 -H 'Content-Type: application/json;charset=UTF-8' \
--H 'Origin: http://.secret.domain.' \
--H 'Referer: http://.secret.domain./domains' \
+-H '.secret.' \
+-H '.secret.' \
 -d '{"id":'${IDRESULT[0]}'}' \
 --compressed \
 --insecure \;)
 
 # получаем 443 scheme из массива
-RESULT3=$(curl -s -XPOST 'http://.secret.domain./api/v1/domains.getById' \
+RESULT3=$($BCURL -s -XPOST '.secret.' \
 -H 'Accept: application/json, text/plain, */*' \
 -H 'Accept-Language: en,en-US;q=0.9' \
 -H "Access-SSID: $SSID" \
 -H 'Connection: keep-alive' \
 -H 'Content-Type: application/json;charset=UTF-8' \
--H 'Origin: http://.secret.domain.' \
--H 'Referer: http://.secret.domain./domains' \
+-H '.secret.' \
+-H '.secret.' \
 -d '{"id":'${IDRESULT[1]}'}' \
 --compressed \
 --insecure \;)
 
 
 # парсим тело 80 scheme в json формат
-JSONRESULT2=$(jq -r '.[]' <<< $RESULT2;)
+JSONRESULT2=$($BJQ -r '.[]' <<< $RESULT2;)
 $verbose && echo -e "\nvar \$JSONRESULT2\n$JSONRESULT2" || :
 # парсим тело 443 scheme в json формат
-JSONRESULT3=$(jq -r '.[]' <<< $RESULT3;)
+JSONRESULT3=$($BJQ -r '.[]' <<< $RESULT3;)
 $verbose && echo -e "\nvar \$JSONRESULT3\n$JSONRESULT3" || :
 
 
 # проверка на статус домена (0 - домен выключен в кц, услуга неактивна). Если всё ок - продолжаем выполнение с выводом предупреждения
-STATUSRESULT=$(jq -r '.result.items | .. | .status? | select (.)' <<< $RESULT | tr -d ',';)
+STATUSRESULT=$($BJQ -r '.result.items | .. | .status? | select (.)' <<< $RESULT | tr -d ',';)
 # тут надо допилить проверку массива функцией empty as best practices
 if [[ $STATUSRESULT =~ 0 ]]
 then
-        echo -e "\n\e[1;33mWarning! Domain status is disabled for one or more ports.\e[0m\nVisit to http://cc2.storm-pro.net/domains and billing, and check status!"
+        echo -e "\n\e[1;33mWarning! Domain status is disabled for one or more ports.\e[0m\nVisit to http://.secret. and billing, and check status!"
 else
         :
 fi
 $verbose && echo -e "\nvar \$STATUSRESULT\n$STATUSRESULT" || :
 
 # проверка на наличие listen (здесь массив)
-FRONTENDIPSRESULT=($(jq -r '.result.items | .. | .frontend_ips? | select (.)' <<< $RESULT | tr -d ',"[]' | sort -u;))
+FRONTENDIPSRESULT=($($BJQ -r '.result.items | .. | .frontend_ips? | select (.)' <<< $RESULT | tr -d ',"[]' | sort -u;))
 if empty "$FRONTENDIPSRESULT"
 then
-        echo -e "\e[1;31m\nError! Domain have not listen ip.\e[0m\nVisit to http://cc2.storm-pro.net/domains"
+        echo -e "\e[1;31m\nError! Domain have not listen ip.\e[0m\nVisit to http://.secret."
 else
         :
 fi
@@ -293,11 +321,11 @@ $verbose && echo -e "\nvar \$FRONTENDIPSRESULT\n$FRONTENDIPSRESULT" || :
 
 
 # проверка на наличие backend
-BACKENDIPSRESULT=$(jq -r '.result.items | .. | .backend_ips? | select (.)' <<< $RESULT | tr -d ',\"[]' | sort -u;)
+BACKENDIPSRESULT=$($BJQ -r '.result.items | .. | .backend_ips? | select (.)' <<< $RESULT | tr -d ',\"[]' | sort -u;)
 if [[ -z "$BACKENDIPSRESULT" ]]
 then
         # получаем время создания конфигурации 80 scheme, вычисляем разницу - потестировать на проде, может быть проблема с временным поясом
-        RESULTCREATED=$(jq -r '.result.created' <<< $RESULT2;)
+        RESULTCREATED=$($BJQ -r '.result.created' <<< $RESULT2;)
         TIMEDIFF=$(( $(date +%s) - (RESULTCREATED) ))
         echo -e "\e[1;31m\nError! Domain have not backend ip.\e[0m Domain configuration was created \e[1;33m$(($TIMEDIFF / 3600))h $((($TIMEDIFF / 60) % 60))m\e[0m ago."
         # проверка на 24 часа с момента создания конфигурации
@@ -306,7 +334,7 @@ then
                         echo -e "\e[1;32mPossible new domain - created less than 24 hours ago\e[0m"
                 fi
 else
-        RESULTCREATED=$(jq -r '.result.created' <<< $RESULT2;)
+        RESULTCREATED=$($BJQ -r '.result.created' <<< $RESULT2;)
         TIMEDIFF=$(( $(date +%s) - (RESULTCREATED) ))
         $verbose && echo -e "\nvar \$TIMEDIFF\n$TIMEDIFF" || :
         $verbose && echo -e "\nvar \$TIMEDIFF human readable\n$(($TIMEDIFF / 3600))h $((($TIMEDIFF / 60) % 60))m" || :
@@ -314,7 +342,7 @@ fi
 $verbose && echo -e "\nvar \$BACKENDIPSRESULT\n$BACKENDIPSRESULT" || :
 
 # проверка на наличие ssl в 443 scheme (frontend) - возможно, имеет смысл реализовать по no_ssl=1 из domains.get
-SSL_FRONTEND=$(jq -r '.result.ssl_key' <<< $RESULT3 | tr -d '"';)
+SSL_FRONTEND=$($BJQ -r '.result.ssl_key' <<< $RESULT3 | tr -d '"';)
 $verbose && echo -e "\nvar \$SSL_FRONTEND\n$SSL_FRONTEND" || :
 if empty "${SSL_FRONTEND}"
 then
@@ -328,7 +356,7 @@ $verbose && echo -e "\nvar \$SSL_FRONTEND was changed to \e[1;33m$SSL_FRONTEND\e
 echo -e "\e[1;34m\nCheck-host https response:\e[0m https://check-host.net/check-http?host=$SSL_FRONTEND%3A//$NAME"
 
 # формирование ссылки на Graylog (получение стрима)
-GRAYLOGSTREAM=$(jq -r '.result.graylog_stream' <<< $RESULT2 | tr -d '"';)
+GRAYLOGSTREAM=$($BJQ -r '.result.graylog_stream' <<< $RESULT2 | tr -d '"';)
 
 # проверка на заполнение стрима, и выбор l7filter в случае отсутствия стрима в конфигурации
 if empty "${GRAYLOGSTREAM}"
@@ -343,26 +371,26 @@ echo -e "\e[1;34m\nGraylog link 5m unfiltered:\e[0m http://graylog.storm-pro.net
 #$verbose && echo -e "\nvar \$GRAYLOGSTREAM\n$GRAYLOGSTREAM" || :
 
 # формирование ссылки на услугу
-SERVICE_ID=$(jq -r '.result.service_id' <<< $RESULT2;)
-echo -e "\e[1;34m\nBilling link:\e[0m https://stormwall.pro/my/.secretlink./clientsservices.php?id=$SERVICE_ID"
+SERVICE_ID=$($BJQ -r '.result.service_id' <<< $RESULT2;)
+echo -e "\e[1;34m\nBilling link:\e[0m https://stormwall.pro/my/4g5jla3lh92y3eg57/clientsservices.php?id=$SERVICE_ID"
 $verbose && echo -e "\nvar \$SERVICE_ID\n$SERVICE_ID" || :
 
 # получение balance enabled ip, с сортировкой т.к. в конфигурации порядок может быть иной (внимание, здесь массив)
-ENABLE_BALANCE_IP80=($(jq -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .ip' <<< $RESULT2 | tr -d '"' | sort -u;))
-ENABLE_BALANCE_IP443=($(jq -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .ip' <<< $RESULT3 | tr -d '"' | sort -u;))
+ENABLE_BALANCE_IP80=($($BJQ -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .ip' <<< $RESULT2 | tr -d '"' | sort -u;))
+ENABLE_BALANCE_IP443=($($BJQ -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .ip' <<< $RESULT3 | tr -d '"' | sort -u;))
 $verbose && echo -e "\nvar \$ENABLE_BALANCE_IP80\n${ENABLE_BALANCE_IP80[*]}" || :
 $verbose && echo -e "\nvar \$ENABLE_BALANCE_IP443\n${ENABLE_BALANCE_IP443[*]}" || :
 
 # проверка на совпадение balance enabled backend ip в 80 и 443 схемах
 if [[ "${ENABLE_BALANCE_IP80[*]}" != "${ENABLE_BALANCE_IP443[*]}" ]]
 then
-        echo -e "\e[1;33m\nWarning! 80 and 443 schemes for domain have differend active backend ip. Need manual check!\e[0m\nVisit to http://cc2.storm-pro.net/domains\n80 scheme enable and balance backend ip:\n${ENABLE_BALANCE_IP80[*]}\n443 scheme enable and balance backend ip:\n${ENABLE_BALANCE_IP443[*]}"
+        echo -e "\e[1;33m\nWarning! 80 and 443 schemes for domain have differend active backend ip. Need manual check!\e[0m\nVisit to http://.secret.\n80 scheme enable and balance backend ip:\n${ENABLE_BALANCE_IP80[*]}\n443 scheme enable and balance backend ip:\n${ENABLE_BALANCE_IP443[*]}"
 else
         :
 fi
 
 # проверка на наличие ssl в 443 scheme (backend) - тут слабое место, я принимаю за данность то, что для нескольких бэков указаны идентичные порты
-PORT_BACKEND=$(jq -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .port' <<< $RESULT3 | tr -d '"' | head -n 1;)
+PORT_BACKEND=$($BJQ -r '.result.backend_ips[] | select(.type == "balance" and .status == "enabled") | .port' <<< $RESULT3 | tr -d '"' | head -n 1;)
 if [[ $PORT_BACKEND == "80" ]]
 then
         SSL_BACKEND=http
@@ -382,19 +410,19 @@ then
 #else
 #       :
 #fi
-        DIG=($(dig a $DOMAIN +time=5 +tries=1 +short | sort -u))
-        $verbose && dig a $DOMAIN || :
-        $verbose && dig a $DOMAIN +trace || :
-        if [[ "${DIG[*]}" != "${FRONTENDIPSRESULT[*]}" ]]
+        DIG=($($BDIG a $DOMAIN +time=5 +tries=1 +short | sort -u))
+        $verbose && $BDIG a $DOMAIN || :
+        $verbose && $BDIG a $DOMAIN +trace || :
+        if [[ "${$BDIG[*]}" != "${FRONTENDIPSRESULT[*]}" ]]
         then
                 echo -e "\n\e[1;33mWarning! Difference A-record!\e[0m\n\e[1;34m\nCheck-host A-records:\e[0m https://check-host.net/check-dns?host=$NAME"
         else
                 :
         fi
 else
-        DIG=($(dig a $NAME +time=5 +tries=1 +short | sort -u))
-        $verbose && dig a $NAME || :
-        $verbose && dig a $NAME +trace || :
+        DIG=($($BDIG a $NAME +time=5 +tries=1 +short | sort -u))
+        $verbose && $BDIG a $NAME || :
+        $verbose && $BDIG a $NAME +trace || :
         if [[ "${DIG[*]}" != "${FRONTENDIPSRESULT[*]}" ]]
         then
                 echo -e "\n\e[1;33mWarning! Difference A-record!\e[0m\n\e[1;34m\nCheck-host A-records:\e[0m https://check-host.net/check-dns?host=$NAME"
@@ -430,6 +458,6 @@ for ip in "${ENABLE_BALANCE_IP443[@]}"
 do
         $verbose && echo -e "\nvar \$ip\n$ip\n" || :
         echo -ne "\nKnocking to $ip:$PORT_BACKEND... "
-        NC=$(nc -zvw 15 $ip $PORT_BACKEND 2>&1 | grep Connect;)
+        NC=$(nc -zvw 15 $ip $PORT_BACKEND 2>&1 | $BGREP Connect;)
         echo $NC
 done
