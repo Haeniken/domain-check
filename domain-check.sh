@@ -372,7 +372,7 @@ echo -e "\e[1;34m\nGraylog link 5m unfiltered:\e[0m http://graylog.storm-pro.net
 
 # формирование ссылки на услугу
 SERVICE_ID=$($BJQ -r '.result.service_id' <<< $RESULT2;)
-echo -e "\e[1;34m\nBilling link:\e[0m https://stormwall.pro/my/4g5jla3lh92y3eg57/clientsservices.php?id=$SERVICE_ID"
+echo -e "\e[1;34m\nBilling link:\e[0m https://stormwall.pro/my/{.SECRET.}/clientsservices.php?id=$SERVICE_ID"
 $verbose && echo -e "\nvar \$SERVICE_ID\n$SERVICE_ID" || :
 
 # получение balance enabled ip, с сортировкой т.к. в конфигурации порядок может быть иной (внимание, здесь массив)
