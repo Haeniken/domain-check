@@ -17,33 +17,11 @@ verbose=false
 
 # Функция проверки значения переменной
 function empty {
-        local var="$1"
-        # Возвращает true, если:
-        # 1.    Имеет значение null ("" пустая строка или значение null текст)
-        # 2.    Не установлена
-        # 3.    Объявлена, но без значения
-        # 4.    Пустой массив
-        if test -z "$var"
-        then
-                [[ $( echo "1" ) ]]
-        return
-        # Возвращает true, если 0 (0 для integer или "0" для строки)
-        elif [ "$var" == 0 2> /dev/null ]
-        then
-                [[ $( echo "1" ) ]]
-        return
-        # возвращает true, если null (текст)
-        elif [ "$var" == null 2> /dev/null ]
-        then
-                [[ $( echo "1" ) ]]
-        return
-        # Возвращает true, если 0.0 (0 для float)
-        elif [ "$var" == 0.0 2> /dev/null ]
-        then
-                [[ $( echo "1" ) ]]
-        return
-        fi
-                [[ $( echo "" ) ]]
+    local var="$1"
+    if test -z "$var" || [ "$var" == 0 ] || [ "$var" == "null" ] || [ "$var" == "0.0" ]; then
+        return 0
+    fi
+    return 1
 }
 
 # Версия
@@ -61,7 +39,7 @@ function show_changelog {
         echo -e "17.05.2022\nРеализована проверка на balance/enable backend ip, а так же их идемпотентность для scheme 80 и 443.\nРеализована проверка на протокол (фронт) при формировании ссылки для check-host.\nДобавил в вывод информацию для отладки (listen и backend ip, порты и протоколы).\nДобавил формирование готового curl запроса к backend."
         echo -e "\e[1;33m\nTODO\e[0m"
         echo -e "\e[1;33m\n* Парсить и игнорировать WaF backend.\n* Добавить readmode для Access-SSID.\n* Реализовать проверку поддержки SNI для SSL и проверку наличия шаблона в rules.\n* Проверка А-записей на совпадение с listen, проверка А-записей от whois опционально.\n* Добавить простукивание порта backend.\e[\0m"
-        }
+}
 
 # Помощь
 function show_help {
@@ -107,7 +85,7 @@ echo -e "* Не умеет изменять ACCESS-SSID (пока воткнут
         echo -e ""
         echo -e "   The command requires a domain name for work"
         exit
-        }
+}
 
 ### All unexpected errors ###
 function unexpected_error {
@@ -120,12 +98,11 @@ echo "$@"
 exit 999
 }
 
-# Проверяем пути к программам, иначе завершение
-verify_bins(){
-[ ! -x $BCURL ] && die "File $BCURL does not exists. Make sure correct path is set in $0."
-[ ! -x $BJQ ] && die "File $BJQ does not exists. Make sure correct path is set in $0."
-[ ! -x $BGREP ] && die "File $BGREP does not exists. Make sure correct path is set in $0."
-[ ! -x $BDIG ] && die "File $BDIG does not exists. Make sure correct path is set in $0."
+# Проверка путей к программам
+verify_bins() {
+    for bin in $BCURL $BJQ $BGREP $BDIG; do
+        [ ! -x "$bin" ] && die "File $bin does not exist. Make sure correct path is set in $0."
+    done
 }
 
 function show_version {
